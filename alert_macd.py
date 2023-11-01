@@ -3,7 +3,7 @@ import pandas as pd
 import MetaTrader5 as mt5
 import time
 from win11toast import toast
-#import win32com.client
+import win32com.client
 import math
 
 def listAvailableSymbols():
@@ -46,8 +46,8 @@ if not mt5.initialize():
 
 
 print('Connected Version: ' + str(mt5.version()))
-#speaker = win32com.client.Dispatch("SAPI.SpVoice")
-#speaker.Speak('connected to Meta trader')
+speaker = win32com.client.Dispatch("SAPI.SpVoice")
+speaker.Speak('connected to Meta trader')
 #listAvailableSymbols()
   
 #listSymbolInfo('NAS100')
@@ -78,8 +78,12 @@ while currentTime.tm_hour <= 20:
     # when macd is below the signal line the SELL and macd below 0
     if ( macd > macd_signal and macd > 0 ): 
         print('BUY')
+        speaker.Speak('alert, buy')
+
     elif ( macd < macd_signal and macd < 0 ):
         print('SELL')
+        speaker.Speak('alert, sell')
+
     else:
         print('do nothing')
 
