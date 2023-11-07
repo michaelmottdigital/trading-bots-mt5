@@ -52,40 +52,45 @@ speaker.Speak('connected to Meta trader')
   
 #listSymbolInfo('NAS100')
 
+
+symbolsToCheck = ['SP500', 'NAS100', 'EURUSD']
+
 currentTime = time.localtime()
 minutesToSleep = 10
 
 while currentTime.tm_hour <= 20:
     print('Checking Prices ', time.strftime('%I:%M:%S', currentTime))
 
+    for symbol in symbolsToCheck:
 
-    data = pd.DataFrame(mt5.copy_rates_from_pos(
-        'SP500',
-        mt5.TIMEFRAME_M5,
-        0,
-        200
-    ))
+        data = pd.DataFrame(mt5.copy_rates_from_pos(
+            symbol,
+            mt5.TIMEFRAME_M5,
+            0,
+            200
+        ))
 
 
-    calc_macd(data)
+        calc_macd(data)
 
-    last_row = data.iloc[-1]
-    macd = last_row['macd']
-    macd_signal = last_row['macd_signal']
-    macd_histogram = last_row['macd_histogram']
-    print('macd: ', macd, '    signal: ', macd_signal, '  hist: ', macd_histogram)
-    # when macd is higher than signal line then BUY and macd above 0
-    # when macd is below the signal line the SELL and macd below 0
-    if ( macd > macd_signal and macd > 0 ): 
-        print('BUY')
-        speaker.Speak('alert, buy')
+        last_row = data.iloc[-1]
+        macd = last_row['macd']
+        macd_signal = last_row['macd_signal']
+        macd_histogram = last_row['macd_histogram']
+        print(symbol, '  macd: ', macd, '    signal: ', macd_signal, '  hist: ', macd_histogram)
+        # when macd is higher than signal line then BUY and macd above 0
+        # when macd is below the signal line the SELL and macd below 0
+        if ( macd > macd_signal and macd > 0 ): 
+            print('BUY ', symbol)
+            speaker.Speak('alert, buy ' + symbol)
 
-    elif ( macd < macd_signal and macd < 0 ):
-        print('SELL')
-        speaker.Speak('alert, sell')
+        elif ( macd < macd_signal and macd < 0 ):
+            print('SELL ', symbol)
+            speaker.Speak('alert, sell ' + symbol)
 
-    else:
-        print('do nothing')
+        else:
+            print('do nothing')
+
 
 
     time.sleep(60)
