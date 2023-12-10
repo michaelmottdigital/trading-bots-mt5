@@ -51,16 +51,14 @@ def open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount):
         # add RSI to our data
         rsi_indicator = RSIIndicator(
             close=data["close"],
-            window=14,
+            window=10,                   # 14 is default, 9 will give more signals
             )
         data["rsi"] = rsi_indicator.rsi()
 
 
         # check for bullish/bearish engulfing candle
         #  look for an up bar preceded by 4 - 6 down candles
-        result = check_engulfing_pattern(data)
-
-
+        #result = check_engulfing_pattern(data)
 
         # check rsi indicator
         #  short - rsi is under threshold after being over threshold    
@@ -91,16 +89,12 @@ def open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount):
             position = create_opening_trade(symbol, "buy", number_of_lots, sl_percent, sl_amount)
             return position
 
-
-
         # if we open a trade then exit right aways
         if not trade_active:
             time.sleep(20)
             currentTime = time.localtime()
 
-
 def create_opening_trade(symbol, order_type, number_of_lots, sl_percent, sl_amount):
-
     if order_type == "buy":
         type = mt5.ORDER_TYPE_BUY
         price = mt5.symbol_info_tick(symbol).ask
@@ -122,7 +116,6 @@ def create_opening_trade(symbol, order_type, number_of_lots, sl_percent, sl_amou
         "type_time": mt5.ORDER_TIME_GTC
     }
 
-
     new_ticket = mt5.order_send(request)
     if new_ticket.retcode != mt5.TRADE_RETCODE_DONE:
         print("2. order_send failed, retcode={}".format(new_ticket.retcode), new_ticket)
@@ -139,11 +132,17 @@ def create_opening_trade(symbol, order_type, number_of_lots, sl_percent, sl_amou
         "long_or_short": long_or_short
     }
 
-    #return new_ticket.order   # return the ticket id
-
-def adjust_trailing_stop(position, ts_amount):
-
+def countdown_timer(minutes, seconds):
+    t = (minutes * 60) + seconds
     
+    while t: 
+        mins, secs = divmod(t, 60) 
+        status = '{:02d}:{:02d}'.format(mins, secs) 
+        print(status, end="\r") 
+        time.sleep(1) 
+        t -= 1
+
+def manage_position(position, ts_amount):
     open_position = True
     while open_position:
         print("checking trailing stop", position["ticket_id"])
@@ -177,9 +176,11 @@ def adjust_trailing_stop(position, ts_amount):
         else: 
             price = mt5.symbol_info_tick(symbol).bid
             new_ts = price + ts_amount
-            if new_ts < old_ts and new_ts - old_ts > 2: 
+            
+            if new_ts < old_ts and old_ts - new_ts > 2: 
                 # move the stop loss
                 move_stop_loss = True
+
 
         if move_stop_loss:
             speaker.Speak('moving stop loss')
@@ -238,11 +239,6 @@ def check_engulfing_pattern(data):
 
 
 
-
-    #print(data.iloc[-1])
-
-    #print(data.tail(10))
-
 # -------------------------------------------------------
 #   Main
 #
@@ -266,24 +262,27 @@ speaker.Speak('connected to Meta trader')
 symbol = "ETHUSD"
 number_of_lots = .01   # .01 lots
 sl_percent = .05 
-sl_amount = 20.0   # doallars for stop loss - total dollars at risk is .20 cents
-ts_amount = 7.0
+sl_amount = 15.0   # doallars for stop loss - total dollars at risk is .20 cents
+ts_amount = 6.0
 
 
-position = open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount)
+
+#position = open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount)
 
 
-#position = { 
-#        "ticket_id": 97569201,
-#        "long_or_short": "long"
-#}
+#countdown_timer(5, 0)
+
+position = { 
+        "ticket_id": 97663782,
+        "long_or_short": "short"
+}
 
 #{'ticket_id': 97582331, 'long_or_short': 'long'}
 
 #print(position)
 
 
-#adjust_trailing_stop(position, ts_amount)
+manage_position(position, ts_amount)
 
 
 mt5.shutdown()
