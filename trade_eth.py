@@ -142,7 +142,10 @@ def countdown_timer(minutes, seconds):
         time.sleep(1) 
         t -= 1
 
-def manage_position(position, ts_amount):
+def manage_position(position, initial_ts_amount):
+    start_time = time.time()
+    #print(time.strftime("%I:%M", start_time))
+    ts_amount = initial_ts_amount
     open_position = True
     while open_position:
         print("checking trailing stop", position["ticket_id"])
@@ -200,6 +203,18 @@ def manage_position(position, ts_amount):
                 quit()
         else:
             print("leave stop loss")
+
+        # after 5 minutes adjust trailing stop loss amount
+        # calculate elapsed time in fraction of minutes
+        elapsed_time = int(time.time() - start_time)
+        print(elapsed_time, " seconds")
+
+        if int(elapsed_time) >= 60 and int(elapsed_time) < 5*60:
+            ts_amount = ts_amount * .80
+        elif int(elapsed_time) >= 5*60 and int(elapsed_time) < 10*60:
+            ts_amount = ts_amount * .80
+        
+        print("ts amount: ", ts_amount)
 
         time.sleep(60)
 
@@ -263,26 +278,19 @@ symbol = "ETHUSD"
 number_of_lots = .01   # .01 lots
 sl_percent = .05 
 sl_amount = 15.0   # doallars for stop loss - total dollars at risk is .20 cents
-ts_amount = 6.0
+initial_ts_amount = 6.0
 
 
+position = open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount)
 
-#position = open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount)
+countdown_timer(5, 0)
 
-
-#countdown_timer(5, 0)
-
-position = { 
-        "ticket_id": 97663782,
-        "long_or_short": "short"
-}
-
-#{'ticket_id': 97582331, 'long_or_short': 'long'}
-
-#print(position)
+#position = { 
+#        "ticket_id": 97663926,
+#        "long_or_short": "short"
+#}
 
 
-manage_position(position, ts_amount)
-
+manage_position(position, initial_ts_amount)
 
 mt5.shutdown()
