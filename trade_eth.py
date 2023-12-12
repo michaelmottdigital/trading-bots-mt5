@@ -5,6 +5,7 @@ import time
 from win11toast import toast
 import win32com.client
 import math
+import random
 from ta import add_all_ta_features
 from ta.momentum import RSIIndicator
 from ta.utils import dropna 
@@ -28,10 +29,9 @@ def truncate(number, digits):
     return math.trunc(x) / (10**digits)
 
 
-def open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount):
+def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
     currentTime = time.localtime()
-    minutesToSleep = 2
 
     trade_active = False
     # currentTime.tm_hour <= 20 
@@ -76,34 +76,38 @@ def open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount):
 
         if rsi_value < 70 and rsi_value_2bars_back > 70:
             print('SELL ')
-            speaker.Speak('alert, sell ')
+            if IS_SPEECH_ENABLED:
+                speaker.Speak('alert, sell ')
+            
             trade_active = True
-            position = create_opening_trade(symbol, "sell", number_of_lots, sl_percent, sl_amount)
+            position = create_opening_trade(symbol, "sell", number_of_lots, ts_amount)
             return position
 
         elif rsi_value > 30 and rsi_value_2bars_back < 30 :
             print('BUY ', symbol)
-            speaker.Speak('alert, BUY ' + symbol)
+            if IS_SPEECH_ENABLED:
+                speaker.Speak('alert, BUY ' + symbol)
+            
             #create_opening_trade(symbol, "buy", number_of_lots, sl_percent)
             trade_active = True
-            position = create_opening_trade(symbol, "buy", number_of_lots, sl_percent, sl_amount)
+            position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
             return position
 
         # if we open a trade then exit right aways
         if not trade_active:
-            time.sleep(20)
-            currentTime = time.localtime()
+            time.sleep(30)
+            #currentTime = time.localtime()
 
-def create_opening_trade(symbol, order_type, number_of_lots, sl_percent, sl_amount):
+def create_opening_trade(symbol, order_type, number_of_lots,ts_amount):
     if order_type == "buy":
         type = mt5.ORDER_TYPE_BUY
         price = mt5.symbol_info_tick(symbol).ask
-        sl = price - sl_amount
+        sl = price - ts_amount
         long_or_short = "long"
     else:
         type = mt5.ORDER_TYPE_SELL
         price = mt5.symbol_info_tick(symbol).bid
-        sl = price + sl_amount
+        sl = price + ts_amount
         long_or_short = "short"
 
     request = {
@@ -143,10 +147,31 @@ def countdown_timer(minutes, seconds):
         t -= 1
 
 def manage_position(position, initial_ts_amount):
+    # right ofer the position is opened, wait 5 minutes
+    
+
+    countdown_timer(5, 0)
+
+
     start_time = time.time()
-    #print(time.strftime("%I:%M", start_time))
+
+    print("start_time:" , start_time)
     ts_amount = initial_ts_amount
-    open_position = True
+
+    open_position = mt5.positions_get(
+            ticket=position["ticket_id"]
+        )
+
+    if len(open_position) == 0:
+        print("No positions are open")
+        return
+    
+    open_position = open_position[0]
+
+    ts_adjusted_count = 0
+
+    first_ts_adjustment_done = False
+    second_ts_adjustment_done = False
     while open_position:
         print("checking trailing stop", position["ticket_id"])
         # trailing stop can only go in one direction
@@ -154,39 +179,48 @@ def manage_position(position, initial_ts_amount):
 
 
         # get old stop loss from ticket 
+        #   why do we need the [0] -- mt5 is returning a namedtuple structure - not sure how to use it
         open_position = mt5.positions_get(
             ticket=position["ticket_id"]
-        )[0]
+        )                 
 
-        #print(open_position)
-
-        if open_position == None:
+        if len(open_position) == 0:
+            if IS_SPEECH_ENABLED:
+                speaker.Speak('no positions open')
+    
             print("no positions open")
+            break
 
-        #print(open_position)
+        open_position = open_position[0]
+
         old_ts = open_position.sl
         #print("old trailing stop: ", old_ts)
 
         move_stop_loss = False
 
         # get current price so we can adjust the stop loss
+        # only move stop loss if 
+        #   1. the current_price is greater than (long) or less than (short) the price at which we opened the trade
+        #   2. the gap between the old and new ts is big enough
+        #
         if position["long_or_short"] == "long":
             price = mt5.symbol_info_tick(symbol).ask
             new_ts = price - ts_amount
-            if new_ts > old_ts and new_ts - old_ts > 2: 
+            if new_ts > old_ts and new_ts - old_ts > 2 and price > open_position.price_open: 
                 # move the stop loss
                 move_stop_loss = True
         else: 
             price = mt5.symbol_info_tick(symbol).bid
             new_ts = price + ts_amount
             
-            if new_ts < old_ts and old_ts - new_ts > 2: 
+            if new_ts < old_ts and old_ts - new_ts > 2 and price < open_position.price_open: 
                 # move the stop loss
                 move_stop_loss = True
 
-
         if move_stop_loss:
-            speaker.Speak('moving stop loss')
+            if IS_SPEECH_ENABLED:
+                speaker.Speak('moving stop loss')
+            
             print("** moving stop loss", old_ts, new_ts)      
             request = {
                     "action": mt5.TRADE_ACTION_SLTP,
@@ -204,19 +238,37 @@ def manage_position(position, initial_ts_amount):
         else:
             print("leave stop loss")
 
-        # after 5 minutes adjust trailing stop loss amount
-        # calculate elapsed time in fraction of minutes
-        elapsed_time = int(time.time() - start_time)
-        print(elapsed_time, " seconds")
-
-        if int(elapsed_time) >= 60 and int(elapsed_time) < 5*60:
-            ts_amount = ts_amount * .80
-        elif int(elapsed_time) >= 5*60 and int(elapsed_time) < 10*60:
-            ts_amount = ts_amount * .80
         
-        print("ts amount: ", ts_amount)
+        elapsed_time = math.floor((time.time() - start_time)/60)
 
-        time.sleep(60)
+        #print("-- elapsed time - minutes: ", elapsed_time)
+        
+        is_price_beyond_open_price = ( 
+            True if (position["long_or_short"] == "long" and price > open_position.price_open) or 
+            (position["long_or_short"] == "short" and price < open_position.price_open) 
+            else False
+        )        
+
+        minutes_to_check = 5
+        is_time_to_adjust_ts_amount = ( 
+            True if (ts_adjusted_count +1) * minutes_to_check == elapsed_time
+            else False
+        ) 
+          
+        max_number_of_adjustments = 3
+
+        if is_time_to_adjust_ts_amount and is_price_beyond_open_price and ts_adjusted_count < max_number_of_adjustments:
+            print("ADJUST TS SIZE  ")
+            ts_amount = ts_amount *.90
+            ts_adjusted_count += 1
+            #print("adjusted: ", ts_amount, "  ", ts_adjusted_count)    
+
+        sleep_seconds = random.randrange(30, 90)
+        print("sleeping: ", sleep_seconds)
+
+        time.sleep(sleep_seconds)
+
+
 
 def set_cndl_up_or_down(row):
     if row["cndl_body_size"] > 0:
@@ -258,7 +310,11 @@ def check_engulfing_pattern(data):
 #   Main
 #
 # -------------------------------------------------------
-    
+
+
+IS_SPEECH_ENABLED = True
+
+
 # connect to MetaTrader 5
 if not mt5.initialize():
     print("initialize() failed")
@@ -267,7 +323,8 @@ if not mt5.initialize():
 
 print('Connected Version: ' + str(mt5.version()))
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
-speaker.Speak('connected to Meta trader')
+if IS_SPEECH_ENABLED:
+    speaker.Speak('connected to Meta trader')
 
 #listAvailableSymbols()
   
@@ -276,21 +333,31 @@ speaker.Speak('connected to Meta trader')
 
 symbol = "ETHUSD"
 number_of_lots = .01   # .01 lots
-sl_percent = .05 
-sl_amount = 15.0   # doallars for stop loss - total dollars at risk is .20 cents
-initial_ts_amount = 6.0
 
 
-position = open_position_on_signal(symbol, number_of_lots, sl_percent, sl_amount)
+while True:
 
-countdown_timer(5, 0)
+    # do not trade between midning at 5am
+    #   24 hour time. 0 to 5
+    current_time  = time.localtime()
+    print("local time: ", current_time)
+    if current_time.tm_hour >= 0 and current_time.tm_hour < 5:
+        time.sleep(60*10)
+        continue
 
-#position = { 
-#        "ticket_id": 97663926,
-#        "long_or_short": "short"
-#}
+    
+    initial_ts_amount = random.uniform(7, 10)
+    print("initial ts: ", initial_ts_amount)
+    position = open_position_on_signal(symbol, number_of_lots, initial_ts_amount)
 
+    #position = { 
+    #        "ticket_id": 97884929,
+    #        "long_or_short": "long"
+    #}
 
-manage_position(position, initial_ts_amount)
+    manage_position(position, initial_ts_amount)
+
+    print("waiting to make a new trade")
+    #countdown_timer(5,0)
 
 mt5.shutdown()
