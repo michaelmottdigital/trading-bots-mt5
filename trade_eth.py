@@ -1,4 +1,4 @@
-from datetime import datetime
+import datetime
 import pandas as pd
 import MetaTrader5 as mt5
 import time
@@ -34,7 +34,6 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
     currentTime = time.localtime()
 
     trade_active = False
-    # currentTime.tm_hour <= 20 
     while not trade_active:
         print('Checking Prices ', time.strftime('%I:%M:%S', currentTime))
 
@@ -42,16 +41,26 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
             symbol,
             mt5.TIMEFRAME_M5,
             0,
-            200
+            500
         ))
 
         # convert time to date time
         data["time"] = pd.to_datetime(data["time"], unit="s")
 
+
+        # add a local time colimn
+        seven_hours = datetime.timedelta(hours=7)
+        data["Date"] = data["time"] - seven_hours
+
+        # create index
+        data = data.set_index("Date")
+
+        #print(data.tail())
+        
         # add RSI to our data
         rsi_indicator = RSIIndicator(
             close=data["close"],
-            window=10,                   # 14 is default, 9 will give more signals
+            window=14,                   # 14 is default, 9 will give more signals
             )
         data["rsi"] = rsi_indicator.rsi()
 
@@ -73,25 +82,49 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
         #speaker.Speak('alert, BUY ' + symbol)
         #return position
         # --------------------  TESTING ------------------------
+        enabled = False
+        if enabled: 
+            if rsi_value < 70 and rsi_value_2bars_back > 70:
+                print('SELL ')
+                if IS_SPEECH_ENABLED:
+                    speaker.Speak('alert, sell ')
+                
+                trade_active = True
+                position = create_opening_trade(symbol, "sell", number_of_lots, ts_amount)
+                return position
 
-        if rsi_value < 70 and rsi_value_2bars_back > 70:
-            print('SELL ')
+            elif rsi_value > 30 and rsi_value_2bars_back < 30 :
+                print('BUY ', symbol)
+                if IS_SPEECH_ENABLED:
+                    speaker.Speak('alert, BUY ' + symbol)
+                
+                #create_opening_trade(symbol, "buy", number_of_lots, sl_percent)
+                trade_active = True
+                position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
+                return position
+
+
+
+        is_engulfing_pattern = check_engulfing_pattern(data)
+
+        if is_engulfing_pattern == "bullish engulfing":
+            print('BUY ', symbol)
             if IS_SPEECH_ENABLED:
-                speaker.Speak('alert, sell ')
-            
+                speaker.Speak('alert, BUY ' + symbol)
+
+            trade_active = True
+            position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
+            return position
+        elif is_engulfing_pattern == "bearish engulfing":
+            print('SELL ', symbol)
+            if IS_SPEECH_ENABLED:
+                speaker.Speak('alert, SELL ' + symbol)
+
             trade_active = True
             position = create_opening_trade(symbol, "sell", number_of_lots, ts_amount)
             return position
 
-        elif rsi_value > 30 and rsi_value_2bars_back < 30 :
-            print('BUY ', symbol)
-            if IS_SPEECH_ENABLED:
-                speaker.Speak('alert, BUY ' + symbol)
-            
-            #create_opening_trade(symbol, "buy", number_of_lots, sl_percent)
-            trade_active = True
-            position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
-            return position
+
 
         # if we open a trade then exit right aways
         if not trade_active:
@@ -280,30 +313,45 @@ def set_cndl_up_or_down(row):
 def check_engulfing_pattern(data):
     print("check engulfing pattern")
 
-    # go through data and create fields
-    # - cndl_body_size
-    # - cndl_body_and_tail_size
     data["cndl_body_size"] = data["close"] - data["open"]
     data["cndl_direction"] = data.apply(set_cndl_up_or_down, axis=1)
 
-    # is the last bar a bullish engulfing candle
     current_bar = data.iloc[-1]
     previous_bar = data.iloc[-2]
-    
-    #print(previous_bar, current_bar)
 
-    # count number of down bars out of last 7
-    number_of_down_bars = len(data.tail(8).query("cndl_direction == 'down'"))
+
+    # lets make sure we were in an up or down trend before the change in direction
+    sorted_data = data.sort_index( ascending=False)
+    down_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'down'"))
+    up_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'up'"))
+
+    is_bullish_engulfing = (
+        True if current_bar.cndl_direction == "up" and previous_bar.cndl_direction == "down" and 
+        abs(current_bar.cndl_body_size) > abs(previous_bar.cndl_body_size) and
+        current_bar.close > previous_bar.open and
+        current_bar.open <= previous_bar.close and
+        down_days >= 4
+        else False
+)
+
+    is_bearish_engulfing = (
+        True if current_bar.cndl_direction == "down" and previous_bar.cndl_direction == "up" and
+        abs(current_bar.cndl_body_size) > abs(previous_bar.cndl_body_size) and 
+        current_bar.close < previous_bar.open and
+        current_bar.open <= previous_bar.close and
+        up_days >= 4
+        else False
+    )
 
     
-    print(' --- down bars: ' , number_of_down_bars)
-    
-    if (current_bar["cndl_direction"] == "up" and 
-        current_bar["close"] > previous_bar["close"] and data["cndl_body_size"] > 3 and
-        number_of_down_bars > 6):
-        
-        print("-- bullish")
-
+    if is_bullish_engulfing:
+        print("Bullish Engulfing")
+        return("bulling engulfing")
+    elif is_bearish_engulfing:
+        print("Bearish Engulfing")
+        return("bearish engulfing")
+    else: 
+        return False
 
 
 # -------------------------------------------------------
