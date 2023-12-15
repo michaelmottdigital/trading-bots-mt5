@@ -9,6 +9,10 @@ import random
 from ta import add_all_ta_features
 from ta.momentum import RSIIndicator
 from ta.utils import dropna 
+import pandas_ta as ta
+
+import argparse
+
 
 def listAvailableSymbols():
     symbols = mt5.symbols_get()
@@ -31,10 +35,11 @@ def truncate(number, digits):
 
 def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
-    currentTime = time.localtime()
 
     trade_active = False
     while not trade_active:
+        currentTime = time.localtime()
+
         print('Checking Prices ', time.strftime('%I:%M:%S', currentTime))
 
         data = pd.DataFrame(mt5.copy_rates_from_pos(
@@ -103,10 +108,26 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
                 position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
                 return position
 
+        indicators = data.ta.cdl_pattern(name="all")
+
+        #is_engulfing_pattern = check_engulfing_pattern(data)
+        engulfing_pattern = indicators.iloc[-1]["CDL_ENGULFING"]
+
+        data["cndl_body_size"] = data["close"] - data["open"]
+        data["cndl_direction"] = data.apply(set_cndl_up_or_down, axis=1)
+
+        down_days = len(data.iloc[-8:].query("cndl_direction == 'down'"))
+        up_days = len(data.iloc[-8:].query("cndl_direction == 'up'"))
 
 
-        is_engulfing_pattern = check_engulfing_pattern(data)
+        if engulfing_pattern == 100 and down_days > 4: 
+            is_engulfing_pattern = "bullish engulfing"
+        elif engulfing_pattern == -100 and up_days > 4:
+            is_engulfing_pattern = "bearish engulfing"
+        else:
+            is_engulfing_pattern = None
 
+        print(indicators.tail(5)["CDL_ENGULFING"])
         if is_engulfing_pattern == "bullish engulfing":
             print('BUY ', symbol)
             if IS_SPEECH_ENABLED:
@@ -128,7 +149,7 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
         # if we open a trade then exit right aways
         if not trade_active:
-            time.sleep(30)
+            time.sleep(60)
             #currentTime = time.localtime()
 
 def create_opening_trade(symbol, order_type, number_of_lots,ts_amount):
@@ -312,7 +333,6 @@ def set_cndl_up_or_down(row):
 
 def check_engulfing_pattern(data):
     print("check engulfing pattern")
-
     data["cndl_body_size"] = data["close"] - data["open"]
     data["cndl_direction"] = data.apply(set_cndl_up_or_down, axis=1)
 
@@ -352,6 +372,7 @@ def check_engulfing_pattern(data):
         return("bearish engulfing")
     else: 
         return False
+        
 
 
 # -------------------------------------------------------
@@ -362,6 +383,12 @@ def check_engulfing_pattern(data):
 
 IS_SPEECH_ENABLED = True
 
+
+argParser = argparse.ArgumentParser()
+argParser.add_argument("-s", "--symbol", help="symbol")
+
+args = argParser.parse_args()
+print(args.symbol)
 
 # connect to MetaTrader 5
 if not mt5.initialize():
@@ -379,7 +406,7 @@ if IS_SPEECH_ENABLED:
 #listSymbolInfo('NAS100')
 # symbolsToCheck = ['ETHUSD']  #, 'SP500', 'NAS100', 'EURUSD'
 
-symbol = "ETHUSD"
+symbol = args.symbol
 number_of_lots = .01   # .01 lots
 
 
