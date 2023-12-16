@@ -127,7 +127,11 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
         else:
             is_engulfing_pattern = None
 
-        print(indicators.tail(5)["CDL_ENGULFING"])
+        
+
+        print(indicators.tail(6)[["CDL_ENGULFING", "CDL_MORNINGSTAR"]] )
+
+
         if is_engulfing_pattern == "bullish engulfing":
             print('BUY ', symbol)
             if IS_SPEECH_ENABLED:
