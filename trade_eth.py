@@ -10,6 +10,7 @@ from ta import add_all_ta_features
 from ta.momentum import RSIIndicator
 from ta.utils import dropna 
 import pandas_ta as ta
+import numpy as np
 
 import argparse
 
@@ -55,10 +56,15 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
         # add a local time colimn
         seven_hours = datetime.timedelta(hours=7)
-        data["Date"] = data["time"] - seven_hours
+        #data["Date"] = data["time"] - seven_hours
+        data["local_time"] = data["time"] - seven_hours
+
+        #print(data.time)
 
         # create index
-        data = data.set_index("Date")
+        #data = data.set_index("Date")
+        # most recent candle first
+        data.sort_index(ascending=False, inplace=True)
 
         #print(data.tail())
         
@@ -108,31 +114,19 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
                 position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
                 return position
 
-        indicators = data.ta.cdl_pattern(name="all")
+        append_cdl_patterns(data)
 
-        #is_engulfing_pattern = check_engulfing_pattern(data)
-        engulfing_pattern = indicators.iloc[-1]["CDL_ENGULFING"]
-
-        data["cndl_body_size"] = data["close"] - data["open"]
-        data["cndl_direction"] = data.apply(set_cndl_up_or_down, axis=1)
-
-        down_days = len(data.iloc[-8:].query("cndl_direction == 'down'"))
-        up_days = len(data.iloc[-8:].query("cndl_direction == 'up'"))
-
-
-        if engulfing_pattern == 100 and down_days > 4: 
-            is_engulfing_pattern = "bullish engulfing"
-        elif engulfing_pattern == -100 and up_days > 4:
-            is_engulfing_pattern = "bearish engulfing"
-        else:
-            is_engulfing_pattern = None
-
+       # print(data.head()[["cdl_bullish_engulfing", "cdl_bearish_engulfing"]])
+        result = data[["local_time","cdl_bearish_engulfing", "cdl_bullish_engulfing", "open", "close", "cdl_size", "cdl_up", "prev_3cdl_up_trend",  "prev_4cdl_up_trend"]]
+        x = result.query("cdl_bearish_engulfing == True")
+        print(x)
         
+        is_bullish_engulfing_pattern = data.iloc[0]["cdl_bullish_engulfing"]
+        is_bearish_engulfing_pattern = data.iloc[0]["cdl_bearish_engulfing"]
 
-        print(indicators.tail(6)[["CDL_ENGULFING", "CDL_MORNINGSTAR"]] )
+        print(is_bullish_engulfing_pattern, is_bearish_engulfing_pattern)
 
-
-        if is_engulfing_pattern == "bullish engulfing":
+        if is_bullish_engulfing_pattern:
             print('BUY ', symbol)
             if IS_SPEECH_ENABLED:
                 speaker.Speak('alert, BUY ' + symbol)
@@ -140,7 +134,8 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
             trade_active = True
             position = create_opening_trade(symbol, "buy", number_of_lots, ts_amount)
             return position
-        elif is_engulfing_pattern == "bearish engulfing":
+        
+        if is_bearish_engulfing_pattern:
             print('SELL ', symbol)
             if IS_SPEECH_ENABLED:
                 speaker.Speak('alert, SELL ' + symbol)
@@ -345,7 +340,7 @@ def check_engulfing_pattern(data):
 
 
     # lets make sure we were in an up or down trend before the change in direction
-    sorted_data = data.sort_index( ascending=False)
+    #sorted_data = data.sort_index( ascending=False)
     down_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'down'"))
     up_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'up'"))
 
@@ -379,10 +374,69 @@ def check_engulfing_pattern(data):
         
 
 
+
+def append_cdl_patterns(data):  
+
+    data["cdl_size"] = data["close"] - data["open"]
+    data["cdl_up"] = np.where(data["cdl_size"] > 0, True, False)
+
+    # count number of down days before the current candle 
+    data["prev_3cdl_down_trend"] = np.where( 
+                            (data.shift(-1)["cdl_up"] == False) &
+                            (data.shift(-2)["cdl_up"] == False) &
+                            (data.shift(-3)["cdl_up"] == False),
+                         True, False
+                         )
+
+    data["prev_4cdl_down_trend"] = np.where( 
+                            (data.shift(-1)["cdl_up"] == False) &
+                            (data.shift(-2)["cdl_up"] == False) &
+                            (data.shift(-3)["cdl_up"] == False) &
+                            (data.shift(-4)["cdl_up"] == False),
+                         True, False
+                         )
+
+    data["cdl_bullish_engulfing"] = np.where( (data["open"] <= data.shift(-1)["close"]) &
+                                             (data["close"] >= data.shift(-1)["open"]) & 
+                                             ((data["cdl_up"]) & (data.shift(-1)["cdl_up"] == False)) &
+                                             (data["prev_4cdl_down_trend"]),
+                                         True, False
+                                        )
+
+    # bearish engulfing pattern
+    data["prev_3cdl_up_trend"] = np.where( 
+                            (data.shift(-1)["cdl_up"]) &
+                            (data.shift(-2)["cdl_up"]) &
+                            (data.shift(-3)["cdl_up"]),
+                         True, False
+                         )
+
+    data["prev_4cdl_up_trend"] = np.where( 
+                            (data.shift(-1)["cdl_up"]) &
+                            (data.shift(-2)["cdl_up"]) &
+                            (data.shift(-3)["cdl_up"]) &
+                            (data.shift(-4)["cdl_up"]),
+                         True, False
+                         )
+
+    data["cdl_bearish_engulfing"] = np.where( (data["close"] <= data.shift(-1)["open"]) &
+                                             (data["open"] >= data.shift(-1)["close"]) & 
+                                             ((data["cdl_up"] == False) & (data.shift(-1)["cdl_up"] == True)) &
+                                             (data["prev_4cdl_up_trend"]),
+                                         True, False
+                                        )
+
+
+    #return data
+
+
+
 # -------------------------------------------------------
 #   Main
 #
 # -------------------------------------------------------
+
+
 
 
 IS_SPEECH_ENABLED = True
