@@ -47,7 +47,7 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
             symbol,
             mt5.TIMEFRAME_M5,
             0,
-            500
+            300
         ))
 
         # convert time to date time
@@ -59,15 +59,6 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
         #data["Date"] = data["time"] - seven_hours
         data["local_time"] = data["time"] - seven_hours
 
-        #print(data.time)
-
-        # create index
-        #data = data.set_index("Date")
-        # most recent candle first
-        data.sort_index(ascending=False, inplace=True)
-
-        #print(data.tail())
-        
         # add RSI to our data
         rsi_indicator = RSIIndicator(
             close=data["close"],
@@ -76,16 +67,33 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
         data["rsi"] = rsi_indicator.rsi()
 
 
+        # create index
+        #data = data.set_index("Date")
+        # most recent candle first
+
+        # most recent bar is incomplete, we need to remove it
+        # we only want to use completed candles
+        data.drop(index=len(data)-1, inplace=True)
+
+        # make sure first row is the most current time
+        data.sort_index(ascending=False, inplace=True)
+
+        # we want to make sure that the most recent candle has index = 0
+        data.reset_index(inplace=True)
+
+        #print(data)
+
+       
+
         # check for bullish/bearish engulfing candle
         #  look for an up bar preceded by 4 - 6 down candles
-        #result = check_engulfing_pattern(data)
 
         # check rsi indicator
         #  short - rsi is under threshold after being over threshold    
         last_row = data.iloc[-1]
         rsi_value = last_row["rsi"]
         rsi_value_2bars_back = data.iloc[-3]["rsi"]
-        print("RSI ", rsi_value)
+        #print("RSI ", rsi_value)
 
         # --------------------  TESTING ------------------------
         #position = create_opening_trade(symbol, "buy", number_of_lots, sl_percent, sl_amount)
@@ -116,16 +124,18 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
         append_cdl_patterns(data)
 
-       # print(data.head()[["cdl_bullish_engulfing", "cdl_bearish_engulfing"]])
-        result = data[["local_time","cdl_bearish_engulfing", "cdl_bullish_engulfing", "open", "close", "cdl_size", "cdl_up", "prev_3cdl_up_trend",  "prev_4cdl_up_trend"]]
-        x = result.query("cdl_bearish_engulfing == True")
-        print(x)
+   
+        #data.head(50)[["local_time", "prev_time", "cdl_bullish_engulfing", "cdl_bearish_engulfing", "cdl_up", "prev_cdl_rsi", "open", "prev_open", "close", "prev_close"]].to_csv("test.csv")
+        #exit(0)
+
+        print(data.head(10)[["local_time", "cdl_bullish_engulfing", "cdl_bearish_engulfing", "cdl_up", "prev_cdl_up", "open", "prev_open", "close", "prev_close"]])
         
+        
+
         is_bullish_engulfing_pattern = data.iloc[0]["cdl_bullish_engulfing"]
         is_bearish_engulfing_pattern = data.iloc[0]["cdl_bearish_engulfing"]
 
-        print(is_bullish_engulfing_pattern, is_bearish_engulfing_pattern)
-
+        
         if is_bullish_engulfing_pattern:
             print('BUY ', symbol)
             if IS_SPEECH_ENABLED:
@@ -148,7 +158,7 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
 
         # if we open a trade then exit right aways
         if not trade_active:
-            time.sleep(60)
+            time.sleep(10)
             #currentTime = time.localtime()
 
 def create_opening_trade(symbol, order_type, number_of_lots,ts_amount):
@@ -203,7 +213,7 @@ def manage_position(position, initial_ts_amount):
     # right ofer the position is opened, wait 5 minutes
     
 
-    countdown_timer(5, 0)
+    countdown_timer(2, 0)
 
 
     start_time = time.time()
@@ -312,7 +322,7 @@ def manage_position(position, initial_ts_amount):
 
         if is_time_to_adjust_ts_amount and is_price_beyond_open_price and ts_adjusted_count < max_number_of_adjustments:
             print("ADJUST TS SIZE  ")
-            ts_amount = ts_amount *.90
+            ts_amount = ts_amount * 1
             ts_adjusted_count += 1
             #print("adjusted: ", ts_amount, "  ", ts_adjusted_count)    
 
@@ -322,60 +332,87 @@ def manage_position(position, initial_ts_amount):
         time.sleep(sleep_seconds)
 
 
-
-def set_cndl_up_or_down(row):
-    if row["cndl_body_size"] > 0:
-        return "up"
-    else:
-        return "down"
+def append_TR(data):
+    # TR = Max of high - low or high - previous close or low - previous close
+    print("append TR")
 
 
-def check_engulfing_pattern(data):
-    print("check engulfing pattern")
-    data["cndl_body_size"] = data["close"] - data["open"]
-    data["cndl_direction"] = data.apply(set_cndl_up_or_down, axis=1)
-
-    current_bar = data.iloc[-1]
-    previous_bar = data.iloc[-2]
+    print(data.head(5))
 
 
-    # lets make sure we were in an up or down trend before the change in direction
-    #sorted_data = data.sort_index( ascending=False)
-    down_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'down'"))
-    up_days = len(sorted_data.iloc[1:8].query("cndl_direction == 'up'"))
+def append_cdl_patterns(data):
+    data["cdl_size"] = data["close"] - data["open"]
+    data["cdl_up"] = np.where(data["cdl_size"] > 0, True, False)
 
-    is_bullish_engulfing = (
-        True if current_bar.cndl_direction == "up" and previous_bar.cndl_direction == "down" and 
-        abs(current_bar.cndl_body_size) > abs(previous_bar.cndl_body_size) and
-        current_bar.close > previous_bar.open and
-        current_bar.open <= previous_bar.close and
-        down_days >= 4
-        else False
-)
 
-    is_bearish_engulfing = (
-        True if current_bar.cndl_direction == "down" and previous_bar.cndl_direction == "up" and
-        abs(current_bar.cndl_body_size) > abs(previous_bar.cndl_body_size) and 
-        current_bar.close < previous_bar.open and
-        current_bar.open <= previous_bar.close and
-        up_days >= 4
-        else False
-    )
-
-    
-    if is_bullish_engulfing:
-        print("Bullish Engulfing")
-        return("bulling engulfing")
-    elif is_bearish_engulfing:
-        print("Bearish Engulfing")
-        return("bearish engulfing")
-    else: 
-        return False
+    for index, current_cdl in data.iterrows():
+        is_bullish_engulfing = False
+        is_bearish_engulfing = False
+        is_down_trend = False
+        is_up_trend = False
+        #print(row[["local_time"]])   
         
+        #data.at[index, "TR"] = max([row.high - row.low, abs(row.high - data.iloc[index-1].close), abs(row.low - data.iloc[index-1].close)]) 
+        # ignore the last x rows otherwise we get index out of range 
+        if index+3 in data.index:
+            if data.iloc[index+1].cdl_up and data.iloc[index+2].cdl_up and data.iloc[index+3].cdl_up:
+                is_up_trend = True 
+        
+            #data.at[index, "prev1_up"] = data.iloc[index+1].cdl_up
+            #data.at[index, "prev2_up"] = data.iloc[index+2].cdl_up
+            #data.at[index, "prev3_up"] = data.iloc[index+3].cdl_up
+            
+            #data.at[index, "prev1_time"] = data.iloc[index+1].local_time
+            #data.at[index, "prev2_time"] = data.iloc[index+2].local_time
+        
+            if data.iloc[index+1].cdl_up == False and data.iloc[index+2].cdl_up == False and data.iloc[index+3].cdl_up == False :
+                is_down_trend = True
+
+        
+            previous_cdl = data.iloc[index+1]
+            #print("-- RSI", previous_cdl["rsi"])
+            # Bullish Engulfing Pattern
+            # current candle has to be up and previous candle has to be down
+            if (current_cdl.open <= previous_cdl.close and
+                    current_cdl.close >= previous_cdl.open and
+                    current_cdl.cdl_up == True and
+                    previous_cdl.cdl_up == False and
+                    previous_cdl.rsi <= 40
+            ):
+        
+                is_bullish_engulfing = True
+                
+            # Bearish Engulfing Pattern
+            # current candle has to be down and previous candle has to be up        
+            if (current_cdl.close <= previous_cdl.open and
+                    current_cdl.open >= previous_cdl.close and
+                    current_cdl.cdl_up == False and
+                    previous_cdl.cdl_up == True and
+                    previous_cdl.rsi >= 60
+            ):
+        
+                is_bearish_engulfing = True
+            
+
+        #data.at[index,"down_trend"] = is_down_trend
+        #data.at[index,"up_trend"] = is_up_trend
+        data.at[index, "prev_cdl_rsi"] = previous_cdl.rsi
+        data.at[index,"cdl_bullish_engulfing"] = is_bullish_engulfing
+        data.at[index,"cdl_bearish_engulfing"] = is_bearish_engulfing
+        data.at[index,"is_up_trend"] = is_up_trend
+        data.at[index,"is_down_trend"] = is_down_trend
+
+        data.at[index,"prev_open"] = previous_cdl.open
+        data.at[index,"prev_close"] = previous_cdl.close
+        data.at[index,"prev_time"] = previous_cdl.local_time
+        data.at[index,"prev_cdl_up"] = previous_cdl.cdl_up
+
+            
+    #data.to_csv("test.csv")
+    #print(data)
 
 
-
-def append_cdl_patterns(data):  
+def append_cdl_patterns_v1(data):  
 
     data["cdl_size"] = data["close"] - data["open"]
     data["cdl_up"] = np.where(data["cdl_size"] > 0, True, False)
@@ -426,6 +463,7 @@ def append_cdl_patterns(data):
                                          True, False
                                         )
 
+    print(data.head(5)[["local_time", "cdl_bullish_engulfing", "cdl_bearish_engulfing", "close"]])
 
     #return data
 
@@ -479,7 +517,7 @@ while True:
         continue
 
     
-    initial_ts_amount = random.uniform(7, 10)
+    initial_ts_amount = 8
     print("initial ts: ", initial_ts_amount)
     position = open_position_on_signal(symbol, number_of_lots, initial_ts_amount)
 
