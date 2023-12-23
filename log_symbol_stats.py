@@ -34,7 +34,7 @@ speaker = win32com.client.Dispatch("SAPI.SpVoice")
 if IS_SPEECH_ENABLED:
     speaker.Speak('connected to Meta trader')
 
-file_name = "logs/stats" + "_ethusd" + ".csv"
+file_name = "logs/stats_" + symbol + ".csv"
 if not os.path.isfile(file_name):
     with open(file_name, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter( f, ["time", "bid_ask"])

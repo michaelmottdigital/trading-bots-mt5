@@ -429,22 +429,22 @@ def append_cdl_patterns_v1(data):
                             (data.shift(-1)["cdl_up"] == False) &
                             (data.shift(-2)["cdl_up"] == False) &
                             (data.shift(-3)["cdl_up"] == False),
-                         True, False
-                         )
+                        True, False
+                        )
 
     data["prev_4cdl_down_trend"] = np.where( 
                             (data.shift(-1)["cdl_up"] == False) &
                             (data.shift(-2)["cdl_up"] == False) &
                             (data.shift(-3)["cdl_up"] == False) &
                             (data.shift(-4)["cdl_up"] == False),
-                         True, False
-                         )
+                        True, False
+                        )
 
     data["cdl_bullish_engulfing"] = np.where( (data["open"] <= data.shift(-1)["close"]) &
-                                             (data["close"] >= data.shift(-1)["open"]) & 
-                                             ((data["cdl_up"]) & (data.shift(-1)["cdl_up"] == False)) &
-                                             (data["prev_4cdl_down_trend"]),
-                                         True, False
+                                            (data["close"] >= data.shift(-1)["open"]) & 
+                                            ((data["cdl_up"]) & (data.shift(-1)["cdl_up"] == False)) &
+                                            (data["prev_4cdl_down_trend"]),
+                                        True, False
                                         )
 
     # bearish engulfing pattern
@@ -452,29 +452,27 @@ def append_cdl_patterns_v1(data):
                             (data.shift(-1)["cdl_up"]) &
                             (data.shift(-2)["cdl_up"]) &
                             (data.shift(-3)["cdl_up"]),
-                         True, False
-                         )
+                        True, False
+                        )
 
     data["prev_4cdl_up_trend"] = np.where( 
                             (data.shift(-1)["cdl_up"]) &
                             (data.shift(-2)["cdl_up"]) &
                             (data.shift(-3)["cdl_up"]) &
                             (data.shift(-4)["cdl_up"]),
-                         True, False
-                         )
+                        True, False
+                        )
 
     data["cdl_bearish_engulfing"] = np.where( (data["close"] <= data.shift(-1)["open"]) &
-                                             (data["open"] >= data.shift(-1)["close"]) & 
-                                             ((data["cdl_up"] == False) & (data.shift(-1)["cdl_up"] == True)) &
-                                             (data["prev_4cdl_up_trend"]),
-                                         True, False
+                                            (data["open"] >= data.shift(-1)["close"]) & 
+                                            ((data["cdl_up"] == False) & (data.shift(-1)["cdl_up"] == True)) &
+                                            (data["prev_4cdl_up_trend"]),
+                                        True, False
                                         )
 
     print(data.head(5)[["local_time", "cdl_bullish_engulfing", "cdl_bearish_engulfing", "close"]])
 
     #return data
-
-
 
 # -------------------------------------------------------
 #   Main
