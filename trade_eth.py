@@ -180,7 +180,8 @@ def create_opening_trade(symbol, order_type, number_of_lots,ts_amount):
         "type": type,
         "sl": sl,
         "comment": order_type + symbol,
-        "type_time": mt5.ORDER_TIME_GTC
+        "type_time": mt5.ORDER_TIME_GTC,
+        "magic": "mm"
     }
 
     new_ticket = mt5.order_send(request)
@@ -505,6 +506,12 @@ if IS_SPEECH_ENABLED:
 symbol = args.symbol
 number_of_lots = .01   # .01 lots
 
+# set parameters based on symbol
+symbol_config = [
+    {
+        symbol: "ETHUSD"
+    }
+]
 
 while True:
 
