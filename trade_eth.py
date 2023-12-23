@@ -11,7 +11,6 @@ from ta.momentum import RSIIndicator
 from ta.utils import dropna 
 import pandas_ta as ta
 import numpy as np
-
 import argparse
 
 
@@ -41,7 +40,9 @@ def open_position_on_signal(symbol, number_of_lots, ts_amount):
     while not trade_active:
         currentTime = time.localtime()
 
+        print("\r\n------------------------------------------------")
         print('Checking Prices ', time.strftime('%I:%M:%S', currentTime))
+        print("------------------------------------------------\r\n")
 
         data = pd.DataFrame(mt5.copy_rates_from_pos(
             symbol,
@@ -180,8 +181,7 @@ def create_opening_trade(symbol, order_type, number_of_lots,ts_amount):
         "type": type,
         "sl": sl,
         "comment": order_type + symbol,
-        "type_time": mt5.ORDER_TIME_GTC,
-        "magic": "mm"
+        "type_time": mt5.ORDER_TIME_GTC
     }
 
     new_ticket = mt5.order_send(request)
@@ -344,7 +344,13 @@ def append_TR(data):
 def append_cdl_patterns(data):
     data["cdl_size"] = data["close"] - data["open"]
     data["cdl_up"] = np.where(data["cdl_size"] > 0, True, False)
-
+    data["cdl_bullish_engulfing"] = False
+    data["cdl_bearish_engulfing"] = False
+    data["is_up_trend"] = False
+    data["is_down_trend"] = False
+    data["prev_cdl_up"] = False
+    #data[""] = False
+    
 
     for index, current_cdl in data.iterrows():
         is_bullish_engulfing = False
