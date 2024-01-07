@@ -6,6 +6,27 @@ import numpy as np
 import os
 import csv
 
+
+def is_daytime():
+    # is the current time between 7:00am and 10:00pm
+    now = datetime.datetime.now()
+    if now.hour >= 7 and now.hour <= 22:
+        return True
+    else:
+        return False
+
+def is_ny_trading_hours():
+    # is the current time between 9:30am and 4:00pm
+    open_time = datetime.time(9,30)
+    close_time = datetime.time(16,0)
+    now = datetime.datetime.now()
+
+    if now.time() >= open_time and now.time() <= close_time and now.weekday in [0,1,2,3,4]:
+        return True
+    else:
+        return False 
+
+
 def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5.TIMEFRAME_M5):
     #print("get symbol history")
 
@@ -126,7 +147,22 @@ def create_opening_trade(symbol, order_type, number_of_lots,sl_amount):
         mt5.shutdown()
         quit()
 
-    print("opened position with POSITION_TICKET={}".format(new_ticket.order))
+    #print("--------------------")
+    #print("order result")
+    #print(new_ticket)
+    #print("--------------------")
+    
+    
+    position_detail = mt5.positions_get(ticket=new_ticket.order)[0]  # 0 because it is a named tuple
+    
+    #print("\r\n--------------------")
+    #print(position_detail)
+    
+    #print(position_detail.ticket)
+
+    #print("--------------------\r\n")
+
+    #print("opened position with POSITION_TICKET={}".format(new_ticket.order))
     #print(new_ticket)
    # long_or_short = "long" if order_type == "buy" else "short"
     
@@ -134,11 +170,13 @@ def create_opening_trade(symbol, order_type, number_of_lots,sl_amount):
         "symbol": symbol,
         "ticket_id": new_ticket.order,
         "long_or_short": long_or_short,
-        "price": new_ticket.price,
-        "lots": new_ticket.volume,
         "sl_amount": sl_amount,
-        "sl": sl
+        "detail": position_detail
     }
+
+    #print(result)
+    #print("---- done ------ ")
+    #print(result["position_detail"].ticket)
 
     write_trade_log(result, "create_position")
     print("---- result: ", result)
@@ -157,9 +195,9 @@ def write_trade_log(trade, order_type):
         "ticket_id": trade["ticket_id"],
         "order_type": order_type,
         "direction": trade["long_or_short"],
-        "price_open": trade["price"],
+        "price_open": trade["detail"].price_open,
         "sl_moved": 0,
-        "sl": trade["sl"]
+        "sl": trade["detail"].sl
     }
 
     file_name = "logs/tradelog.csv"

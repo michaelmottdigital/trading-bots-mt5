@@ -6,11 +6,9 @@ import talib as ta
 import time
 import win32com.client
 import argparse
+import datetime
 
-
-from trade_utils import get_symbol_data, create_opening_trade
-
-
+from trade_utils import get_symbol_data, create_opening_trade, is_ny_trading_hours, is_daytime
 
 def open_position(symbol, data):
     # look for a trade
@@ -21,9 +19,10 @@ def open_position(symbol, data):
     number_of_lots = .01
     
     is_test_buy = False
+    is_test_sell = False
     if is_test_buy or current_cdl.ind_ma_cross == 1:
         #buy
-        if IS_SPEECH_ENABLED:
+        if is_daytime():
                 speaker.Speak('alert BUY')
 
         print("Buy")
@@ -32,9 +31,9 @@ def open_position(symbol, data):
         position = create_opening_trade(symbol, "buy", number_of_lots, sl_amount)
         return position
 
-    elif current_cdl.ind_ma_cross == -1:
+    elif is_test_sell or current_cdl.ind_ma_cross == -1:
         #sell
-        if IS_SPEECH_ENABLED:
+        if is_daytime():
                 speaker.Speak('alert SELL')
         print("Sell")
         current_price = mt5.symbol_info_tick(symbol).bid
@@ -66,7 +65,7 @@ def open_position(symbol, data):
                 #current_cdl.ind_rsi > rsi_oversold_threshold and
                 #is_down_trend
             ):
-            if IS_SPEECH_ENABLED:
+            if is_daytime():
                 speaker.Speak('alert BUY')
             print("Buy")
             current_price = mt5.symbol_info_tick(symbol).ask
@@ -79,7 +78,7 @@ def open_position(symbol, data):
             #current_cdl.ind_rsi < rsi_oversold_threshold and
             #is_up_trend
             ):
-            if IS_SPEECH_ENABLED:
+            if is_daytime():
                 speaker.Speak('alert SELL')
             print("Sell")
             current_price = mt5.symbol_info_tick(symbol).bid
@@ -108,7 +107,7 @@ def manage_position(position, data):
     sl_amount = position["sl_amount"]
     #print(position["symbol"], sl_amount)
 
-    old_sl = position["sl"]
+    old_sl = position["detail"].sl
     move_sl = False
 
     current_cdl = data.iloc[0]
@@ -121,7 +120,7 @@ def manage_position(position, data):
         # new_sl = current_price - sl_amount
         
         if (
-            current_cdl.low > position["price"] and
+            current_cdl.low > position["detail"].price_open and
             current_cdl.low > current_cdl.ind_sma15
             ):
             new_sl = current_cdl.ind_sma15 
@@ -136,7 +135,7 @@ def manage_position(position, data):
         # new_sl = current_price + sl_amount
         
         if (
-            current_cdl.high < position["price"] and 
+            current_cdl.high < position["detail"].price_open and 
             current_cdl.high < current_cdl.ind_sma15
             ):
             new_sl = current_cdl.ind_sma15
@@ -145,7 +144,7 @@ def manage_position(position, data):
                 move_sl = True
 
     if move_sl:
-        if IS_SPEECH_ENABLED:
+        if is_daytime():
             speaker.Speak('moving stop loss')
 
         #print("** moving stop loss", old_sl, new_sl)      
@@ -157,9 +156,7 @@ def manage_position(position, data):
             }
         
         result = mt5.order_send(request)
-        
-        position["sl"] = new_sl
-    
+            
     # return updated postion with new sl or other changes
     return position
     
@@ -178,8 +175,6 @@ print(args.symbol)
 
 symbol = args.symbol
 
-IS_SPEECH_ENABLED = True
-
 # connect to MetaTrader 5
 if not mt5.initialize():
     print("initialize() failed")
@@ -188,7 +183,7 @@ if not mt5.initialize():
 
 print('Connected Version: ' + str(mt5.version()))
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
-if IS_SPEECH_ENABLED:
+if is_daytime():
     speaker.Speak('connected to Meta trader')
 
 current_time = 0
@@ -196,13 +191,13 @@ previous_time = 0
 position = None 
 
 while True:
-    data = get_symbol_data(symbol, closed_candles_only=True, timeframe=mt5.TIMEFRAME_M5)
+    data = get_symbol_data(symbol, closed_candles_only=True, timeframe=mt5.TIMEFRAME_M15)
     current_time = data.iloc[0].local_time
     print("checking for new data", current_time)
     if current_time != previous_time:
         # we have a new candle
         print("new data has arrived: ", current_time)
-        #if IS_SPEECH_ENABLED:
+        #if is_daytime():
             #speaker.Speak('new data has arrived')
 
         if position == None:
