@@ -17,27 +17,31 @@ def open_position(symbol, data):
     print(data.head(5)[["close", "ind_ma_cross", "ind_sma9", "ind_sma21"]])
 
     number_of_lots = .01
+    if symbol == "ETHUSD":
+        number_of_lots = .03
+    elif symbol == "SP500":
+        number_of_lots = .01
     
     is_test_buy = False
     is_test_sell = False
-    if is_test_buy or current_cdl.ind_ma_cross == 1:
-        #buy
+    if is_test_buy or (current_cdl.ind_ma_cross == 1 and current_cdl.cdl_up):
+        # buy
         if is_daytime():
                 speaker.Speak('alert BUY')
 
         print("Buy")
         current_price = mt5.symbol_info_tick(symbol).ask
-        sl_amount = current_cdl.ind_atr * 2
+        sl_amount = current_cdl.ind_atr * 1.5
         position = create_opening_trade(symbol, "buy", number_of_lots, sl_amount)
         return position
 
-    elif is_test_sell or current_cdl.ind_ma_cross == -1:
-        #sell
+    elif is_test_sell or (current_cdl.ind_ma_cross == -1 and current_cdl.cdl_down):
+        # sell
         if is_daytime():
                 speaker.Speak('alert SELL')
         print("Sell")
         current_price = mt5.symbol_info_tick(symbol).bid
-        sl_amount = current_cdl.ind_atr * 2
+        sl_amount = current_cdl.ind_atr * 1.5
         position = create_opening_trade(symbol, "sell", number_of_lots, sl_amount)
         return position
 
@@ -156,7 +160,12 @@ def manage_position(position, data):
             }
         
         result = mt5.order_send(request)
+
+        # updsate position and position details
+        position_detail = mt5.positions_get(ticket=position.ticket_id)[0]  # 0 because it is a named tuple
+        position.detail = position_detail
             
+
     # return updated postion with new sl or other changes
     return position
     
@@ -191,9 +200,9 @@ previous_time = 0
 position = None 
 
 while True:
-    data = get_symbol_data(symbol, closed_candles_only=True, timeframe=mt5.TIMEFRAME_M15)
+    data = get_symbol_data(symbol, closed_candles_only=True, timeframe=mt5.TIMEFRAME_M5)
     current_time = data.iloc[0].local_time
-    print("checking for new data", current_time)
+    print("checking for new data ", current_time, " " , symbol)
     if current_time != previous_time:
         # we have a new candle
         print("new data has arrived: ", current_time)
