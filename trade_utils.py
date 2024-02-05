@@ -28,11 +28,12 @@ def is_ny_trading_hours():
 
 
 def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5.TIMEFRAME_M5):
-    #print("get symbol history")
+    print("get symbol history")
 
+    
     data = pd.DataFrame(mt5.copy_rates_from_pos(
         symbol,
-        timeframe,
+        get_MT5_Timeframe(timeframe),
         0,
         periods
     ))
@@ -70,7 +71,9 @@ def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5
                     ind_sma9 = data.close.rolling(9).mean(),
                     ind_sma15 = data.close.rolling(15).mean(),
                     ind_sma21 = data.close.rolling(21).mean(),
-                   
+                    ind_sma20 = data.close.rolling(20).mean(),
+                    ind_sma35 = data.close.rolling(35).mean(),
+                    ind_sma50 = data.close.rolling(50).mean()
                 )
            
             .assign(
@@ -114,11 +117,27 @@ def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5
         )
     
 
+    # is rsi overbougth or oversold
 
+    data["is_prev_trend_down"] = np.where(
+        ( data.shift(-1).cdl_down == True ) &
+        ( data.shift(-2).cdl_down == True ) &
+        ( data.shift(-3).cdl_down == True ),
+        True, False
+    )
+
+    data["is_prev_trend_up"] = np.where(
+        ( data.shift(-1).cdl_up == True ) &
+        ( data.shift(-2).cdl_up == True ) &
+        ( data.shift(-3).cdl_up == True ),
+        True, False
+    )
+
+    #data.to_csv("./notebooks/test_data.csv")
     return data
 
 
-def create_opening_trade(symbol, order_type, number_of_lots,sl_amount):
+def create_opening_trade(symbol, order_type, number_of_lots,sl_amount,timeframe):
     if order_type == "buy":
         type = mt5.ORDER_TYPE_BUY
         price = mt5.symbol_info_tick(symbol).ask
@@ -171,7 +190,11 @@ def create_opening_trade(symbol, order_type, number_of_lots,sl_amount):
         "ticket_id": new_ticket.order,
         "long_or_short": long_or_short,
         "sl_amount": sl_amount,
+        "strategy": "",
+        "timeframe": timeframe,
+        "num_candles_since_open": 1,
         "detail": position_detail
+       
     }
 
     #print(result)
@@ -196,18 +219,38 @@ def write_trade_log(trade, order_type):
         "order_type": order_type,
         "direction": trade["long_or_short"],
         "price_open": trade["detail"].price_open,
-        "sl_moved": 0,
-        "sl": trade["detail"].sl
+        "sl": trade["detail"].sl,
+        "timeframe": trade["timeframe"]
     }
 
     file_name = "logs/tradelog.csv"
     
     if not os.path.isfile(file_name):
         with open(file_name, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl_moved", "sl"])
+            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe"])
             writer.writeheader()
 
 
     with open(file_name, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl_moved", "sl"])
+        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe"])
         writer.writerow(data)
+
+
+def get_MT5_Timeframe(tf):
+    match(tf):
+        case "30M":
+            timeframe = mt5.TIMEFRAME_M30
+        case "15M":
+            timeframe = mt5.TIMEFRAME_M15
+        case "5M":
+            timeframe = mt5.TIMEFRAME_M5
+        case "1M":
+            timeframe = mt5.TIMEFRAME_M1
+        case "1H":
+            timeframe = mt5.TIMEFRAME_H1
+        case "4H":
+            timeframe = mt5.TIMEFRAME_H4
+        case _:
+            timeframe = None
+
+    return timeframe
