@@ -6,6 +6,7 @@ import numpy as np
 import os
 import csv
 
+import win32com.client
 
 def is_daytime():
     # is the current time between 7:00am and 10:00pm
@@ -89,6 +90,26 @@ def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5
 
     data = data.assign( ind_ma_cross = data.ind_ma_bullish.diff())
             
+    # rsi signal
+    rsi_overbought = 72
+    rsi_oversold = 28
+    data["tmp_is_below_threshold"] = np.where(data.ind_rsi <= rsi_oversold, 1, 0) 
+    data = data.assign( tmp_is_oversold = data.tmp_is_below_threshold.diff() )
+    data["signal_rsi_buy"] = np.where(data.tmp_is_oversold == -1, True, False)
+
+    data["tmp_is_above_threshold"] = np.where(data.ind_rsi >=  rsi_overbought, 1, 0) 
+    data = data.assign( tmp_is_overbought = data.tmp_is_above_threshold.diff() )
+    data["signal_rsi_sell"] = np.where(data.tmp_is_overbought == -1, True, False)
+
+
+    data.drop(
+        ["tmp_is_below_threshold",  "tmp_is_oversold", "tmp_is_above_threshold", "tmp_is_overbought"], 
+        axis=1,
+        inplace=True
+    )
+
+
+
     # most recent bar is incomplete, we need to remove it
     # we only want to use completed candles
     if closed_candles_only:
@@ -137,7 +158,20 @@ def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5
     return data
 
 
-def create_opening_trade(symbol, order_type, number_of_lots,sl_amount,timeframe):
+def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timeframe, strategy):
+    speaker = win32com.client.Dispatch("SAPI.SpVoice")
+    
+    if order_type == "buy":
+        current_price = mt5.symbol_info_tick(symbol).ask
+    else: 
+        current_price = mt5.symbol_info_tick(symbol).bid
+
+    sl_amount = current_cdl.ind_atr * 1.5
+    
+    if is_daytime():
+        speaker.Speak('alert ' + order_type)
+        print(order_type)
+           
     if order_type == "buy":
         type = mt5.ORDER_TYPE_BUY
         price = mt5.symbol_info_tick(symbol).ask
@@ -174,32 +208,19 @@ def create_opening_trade(symbol, order_type, number_of_lots,sl_amount,timeframe)
     
     position_detail = mt5.positions_get(ticket=new_ticket.order)[0]  # 0 because it is a named tuple
     
-    #print("\r\n--------------------")
-    #print(position_detail)
-    
-    #print(position_detail.ticket)
-
-    #print("--------------------\r\n")
-
-    #print("opened position with POSITION_TICKET={}".format(new_ticket.order))
-    #print(new_ticket)
-   # long_or_short = "long" if order_type == "buy" else "short"
-    
     result = { 
         "symbol": symbol,
         "ticket_id": new_ticket.order,
         "long_or_short": long_or_short,
         "sl_amount": sl_amount,
-        "strategy": "",
+        "strategy": strategy,
         "timeframe": timeframe,
         "num_candles_since_open": 1,
         "detail": position_detail
        
     }
 
-    #print(result)
-    #print("---- done ------ ")
-    #print(result["position_detail"].ticket)
+
 
     write_trade_log(result, "create_position")
     print("---- result: ", result)
@@ -220,19 +241,20 @@ def write_trade_log(trade, order_type):
         "direction": trade["long_or_short"],
         "price_open": trade["detail"].price_open,
         "sl": trade["detail"].sl,
-        "timeframe": trade["timeframe"]
+        "timeframe": trade["timeframe"],
+        "strategy": trade["strategy"]
     }
 
     file_name = "logs/tradelog.csv"
     
     if not os.path.isfile(file_name):
         with open(file_name, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe"])
+            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy"])
             writer.writeheader()
 
 
     with open(file_name, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe"])
+        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy"])
         writer.writerow(data)
 
 
@@ -254,3 +276,15 @@ def get_MT5_Timeframe(tf):
             timeframe = None
 
     return timeframe
+
+
+
+def is_trading_hours():
+    # trading hours are 4:00am to 3:30pm
+    now = datetime.datetime.now().time()
+
+    start_time = datetime.time(4,0,0)
+    end_time = datetime.time(20,30,0)   #15
+
+    return now >= start_time and now <= end_time
+    
