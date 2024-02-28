@@ -31,13 +31,15 @@ def is_ny_trading_hours():
 def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5.TIMEFRAME_M5):
     print("get symbol history")
 
-    
     data = pd.DataFrame(mt5.copy_rates_from_pos(
         symbol,
         get_MT5_Timeframe(timeframe),
+        #mt5.TIMEFRAME_M5,
         0,
         periods
     ))
+
+    
     
     # create a field converting to local date and time
     seven_hours = datetime.timedelta(hours=7)
@@ -158,7 +160,8 @@ def get_symbol_data(symbol, closed_candles_only=True, periods=300, timeframe=mt5
     return data
 
 
-def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timeframe, strategy):
+def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timeframe, strategy, is_speech_enabled):
+
     speaker = win32com.client.Dispatch("SAPI.SpVoice")
     
     if order_type == "buy":
@@ -166,21 +169,24 @@ def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timefram
     else: 
         current_price = mt5.symbol_info_tick(symbol).bid
 
-    sl_amount = current_cdl.ind_atr * 1.5
+    bid_ask_spread = abs(mt5.symbol_info_tick(symbol).bid - mt5.symbol_info_tick(symbol).ask) 
+    print("\nbid ask spread: ", bid_ask_spread, "\n")
+
+    sl_amount = (current_cdl.ind_atr * 1.5) + bid_ask_spread
     
-    if is_daytime():
+    if is_daytime() and is_speech_enabled:
         speaker.Speak('alert ' + order_type)
         print(order_type)
            
     if order_type == "buy":
         type = mt5.ORDER_TYPE_BUY
-        price = mt5.symbol_info_tick(symbol).ask
-        sl = price - sl_amount 
+        #price = mt5.symbol_info_tick(symbol).ask
+        sl = current_price - sl_amount 
         long_or_short = "long"
     else:
         type = mt5.ORDER_TYPE_SELL
-        price = mt5.symbol_info_tick(symbol).bid
-        sl = price + sl_amount
+        #price = mt5.symbol_info_tick(symbol).bid
+        sl = current_price + sl_amount
         long_or_short = "short"
 
     request = {
@@ -189,11 +195,12 @@ def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timefram
         "volume": number_of_lots,
         "type": type,
         "sl": sl,
-        "comment": order_type + symbol,
+        "comment": order_type + " " + timeframe + " " + strategy,
         "type_time": mt5.ORDER_TIME_GTC
     }
 
     new_ticket = mt5.order_send(request)
+    # new ticket is type OrderSendResult 
     if new_ticket.retcode != mt5.TRADE_RETCODE_DONE:
         print("2. order_send failed, retcode={}".format(new_ticket.retcode), new_ticket)
         print("shutdown() and quit")
@@ -206,8 +213,10 @@ def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timefram
     #print("--------------------")
     
     
-    position_detail = mt5.positions_get(ticket=new_ticket.order)[0]  # 0 because it is a named tuple
+    #position_detail = mt5.positions_get(ticket=new_ticket.order)[0]  # 0 because it is a named tuple
     
+    print(new_ticket)
+
     result = { 
         "symbol": symbol,
         "ticket_id": new_ticket.order,
@@ -216,8 +225,9 @@ def create_opening_trade(symbol, order_type, number_of_lots,current_cdl,timefram
         "strategy": strategy,
         "timeframe": timeframe,
         "num_candles_since_open": 1,
-        "detail": position_detail
-       
+        "position_id": new_ticket.order,
+        "price_open": new_ticket.price,
+        "sl": sl       
     }
 
 
@@ -239,39 +249,42 @@ def write_trade_log(trade, order_type):
         "ticket_id": trade["ticket_id"],
         "order_type": order_type,
         "direction": trade["long_or_short"],
-        "price_open": trade["detail"].price_open,
-        "sl": trade["detail"].sl,
+        "price_open": trade["price_open"],
+        "sl": trade["sl"],
         "timeframe": trade["timeframe"],
-        "strategy": trade["strategy"]
+        "strategy": trade["strategy"],
+        "position_id": trade["position_id"]
     }
 
     file_name = "logs/tradelog.csv"
     
     if not os.path.isfile(file_name):
         with open(file_name, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy"])
+            writer = csv.DictWriter( f, ["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy", "position_id"])
             writer.writeheader()
 
 
     with open(file_name, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy"])
+        writer = csv.DictWriter( f,["time", "symbol", "ticket_id", "order_type", "direction", "price_open", "sl", "timeframe", "strategy", "position_id"])
         writer.writerow(data)
 
 
 def get_MT5_Timeframe(tf):
     match(tf):
-        case "30M":
-            timeframe = mt5.TIMEFRAME_M30
-        case "15M":
-            timeframe = mt5.TIMEFRAME_M15
-        case "5M":
-            timeframe = mt5.TIMEFRAME_M5
         case "1M":
             timeframe = mt5.TIMEFRAME_M1
+        case "5M":
+            timeframe = mt5.TIMEFRAME_M5
+        case "15M":
+            timeframe = mt5.TIMEFRAME_M15
+        case "30M":
+            timeframe = mt5.TIMEFRAME_M30
         case "1H":
             timeframe = mt5.TIMEFRAME_H1
         case "4H":
             timeframe = mt5.TIMEFRAME_H4
+        case "1D":
+            timeframe = mt5.TIMEFRAME_D1
         case _:
             timeframe = None
 
@@ -279,12 +292,20 @@ def get_MT5_Timeframe(tf):
 
 
 
-def is_trading_hours():
-    # trading hours are 4:00am to 3:30pm
+def is_trading_hours(symbol, timeframe):
+
+    # check timeframe 
+    # 5m, 15m and 30m timeframe only alowed between trading hours (6 to 3:30)
+    # 1h, 4h and 1d trade 24/7
+
+    if symbol == "ETHUSD" and timeframe in ["1H", "4H", "1D"] :
+        return True
+
+    # trading hours are 6:00am to 3:30pm
     now = datetime.datetime.now().time()
 
-    start_time = datetime.time(4,0,0)
-    end_time = datetime.time(20,30,0)   #15
+    start_time = datetime.time(6,0,0)
+    end_time = datetime.time(15,30,0)   #15
 
     return now >= start_time and now <= end_time
     

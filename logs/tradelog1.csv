@@ -1,0 +1,2 @@
+time,symbol,ticket_id,order_type,direction,price_open,sl,timeframe,strategy,position_id
+2024-02-07 08:38:10.983070,SP500,212217804,create_position,long,4970.0,4966.427358912807,5M,rsi,212217804

@@ -1,0 +1,2 @@
+time,symbol,ticket_id,order_type,direction,price_open,sl,timeframe,strategy,position_id
+2024-02-07 14:15:20.791080,SP500,212371950,create_position,short,4995.59,5001.225302617832,5M,engulfing_candle,212371950

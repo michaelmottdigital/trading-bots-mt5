@@ -6,7 +6,6 @@ def check_rsi_signal(data):
     print("Checking RSI Signal")
     print("----------------------")
 
-
     current_cdl = data.iloc[0]
    
     print( data[["ind_rsi", "signal_rsi_buy", "signal_rsi_sell"]].head(10) )
@@ -33,13 +32,15 @@ def check_engulfing_candle(data):
 
     if ( 
         current_cdl.ptn_bullish_engulfing_1 and
-        current_cdl.low < current_cdl.ind_sma50
+        current_cdl.low < current_cdl.ind_sma50 and
+        current_cdl.high < current_cdl.ind_sma50
         ):
        return "buy"
 
     elif (
         current_cdl.ptn_bearish_engulfing_1 and
-        current_cdl.high > current_cdl.ind_sma50
+        current_cdl.high > current_cdl.ind_sma50 and
+        current_cdl.low > current_cdl.ind_sma50
 
         ):
         return "sell"
